@@ -1,0 +1,14 @@
+executor: slurm
+latency-wait: 10
+use-conda: True  
+
+default-resources:
+  slurm_account: "p32449"
+  slurm_partition: "short"
+  runtime: 240
+  cpus_per_task: 16
+  mem_mb: 8000
+  nodes: 1
+  slurm_extra: "--mail-user=esmee@u.northwestern.edu --mail-type=END"
+
+slurm-logdir: "/projects/p32449/isolate_genomes/slurm_logs"
