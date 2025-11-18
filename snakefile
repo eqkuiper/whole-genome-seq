@@ -20,17 +20,6 @@ GTDB = "/projects/p32449/goop_stirrers/gtdbtk_data/release226"
 
 rule all:
     input:
-        # Raw QC
-        expand("data/fastqc_raw/{sample}_R1_001_fastqc.html", sample=SAMPLES),
-        expand("data/fastqc_raw/{sample}_R2_001_fastqc.html", sample=SAMPLES),
-        "data/multiqc_raw/multiqc_report.html",
-        # Trimmed reads QC
-        expand("data/fastqc_trimmed/{sample}_R1_paired_fastqc.html", sample=SAMPLES),
-        expand("data/fastqc_trimmed/{sample}_R2_paired_fastqc.html", sample=SAMPLES),
-        "data/multiqc_trimmed/multiqc_report.html",
-        # WGS SPAdes assemblies
-        expand("data/spades/{sample}/contigs.fasta", sample=SAMPLES),
-        expand("data/spades/{sample}/scaffolds.fasta", sample=SAMPLES),
         # GTDB-Tk outputs
         "data/gtdbtk_all",
         # METABOLIC-G outputs
@@ -200,8 +189,8 @@ rule metabolic_g:
         expand("data/spades/{sample}/scaffolds.fasta", sample=SAMPLES)
     output: 
         directory("data/metabolic_g")
-    conda: 
-        "envs/metabolic_adjusted.yml"
+    #conda: 
+    #    "envs/metabolic_adjusted.yml"
     threads: 8
     resources:
         slurm_account="p32449",
@@ -212,6 +201,13 @@ rule metabolic_g:
         slurm_extra="--mail-user=esmee@u.northwestern.edu --mail-type=END,FAIL"
     shell: 
         """
+        module load perl
+        module load python-miniconda3
+        
+        # Bypass buggy activation script
+        export PATH=/projects/p32449/goop_stirrers/miniconda3/envs/METABOLIC_v4.0/bin:$PATH
+        export ADDR2LINE=/usr/bin/addr2line
+
         mkdir -p {output}/scaffolds
         for genome in {input}; do
             folder=$(basename $(dirname "$genome"))
