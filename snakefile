@@ -26,7 +26,9 @@ rule all:
         expand("data/spades/{sample}/contigs.fasta", sample=SAMPLES),
         expand("data/spades/{sample}/scaffolds.fasta", sample=SAMPLES),
         # GTDB-Tk outputs
-        "data/gtdbtk_all"
+        "data/gtdbtk_all",
+        # METABOLIC-G outputs
+        "data/metabolic_g"
 
 
 rule fastqc_raw:
@@ -189,13 +191,13 @@ rule gtdbtk_classify:
 
 rule metabolic_g: 
     input: 
-        "data/spades"
+        expand("data/spades/{sample}/scaffolds.fasta", sample=SAMPLES)
     output: 
         directory("data/metabolic_g")
     threads: 8
     resources:
-        slurm_account="b1042",
-        slurm_partition="genomics-short",
+        slurm_account="p32449",
+        slurm_partition="short",
         runtime=4*60,
         nodes=1,
         mem_mb=60000,
@@ -207,19 +209,15 @@ rule metabolic_g:
         module load python-miniconda3
         source activate /projects/p32449/goop_stirrers/miniconda3/envs/METABOLIC_v4.0
 
-        mkdir -p {output}
-
-        # make a folder with scaffolds 
         mkdir -p {output}/scaffolds
-        for dir in {input.spades_dir}/*; do
-            folder=$(basename $dir)
-            cp "$dir"/scaffolds.fasta "{output}/scaffolds/${folder}_scaffolds.fasta"
+        for genome in {input}; do
+            folder=$(basename $(dirname $genome))
+            cp "$genome" "{output}/scaffolds/${{folder}}_scaffolds.fasta"
         done
         
-        # run metabolic
         perl /projects/p32449/goop_stirrers/METABOLIC_2025-09-02/METABOLIC/METABOLIC-G.pl \
-        -in-gn {output}/scaffolds \
-        -o {output} \
-        -t {threads}
+            -in-gn {output}/scaffolds \
+            -o {output} \
+            -t {threads}
         """
 
