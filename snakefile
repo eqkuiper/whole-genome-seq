@@ -1,0 +1,191 @@
+import os
+
+# CONFIGURE INPUTS --------------------------------------------------- # 
+
+# Directory with raw reads
+READS_DIR = "data/raw_reads/"
+
+# Detect paired FASTQ files
+SAMPLES, = glob_wildcards(os.path.join(READS_DIR, "{sample}_R1_001.fastq.gz"))
+if not SAMPLES:
+    raise ValueError(f"No FASTQ files found in {READS_DIR}")
+
+# -------------------------------------------------------------------- # 
+
+rule all:
+    input:
+        # Raw QC
+        expand("data/fastqc_raw/{sample}_R1_001_fastqc.html", sample=SAMPLES),
+        expand("data/fastqc_raw/{sample}_R2_001_fastqc.html", sample=SAMPLES),
+        "data/multiqc_raw/multiqc_report.html",
+        # Trimmed reads QC
+        expand("data/fastqc_trimmed/{sample}_R1_paired_fastqc.html", sample=SAMPLES),
+        expand("data/fastqc_trimmed/{sample}_R2_paired_fastqc.html", sample=SAMPLES),
+        "data/multiqc_trimmed/multiqc_report.html",
+        # WGS SPAdes assemblies
+        expand("data/spades/{sample}/contigs.fasta", sample=SAMPLES),
+        expand("data/spades/{sample}/scaffolds.fasta", sample=SAMPLES),
+        # GTDB-Tk outputs
+        "data/gtdbtk_all"
+
+
+rule fastqc_raw:
+    input:
+        r1 = os.path.join(READS_DIR, "{sample}_R1_001.fastq.gz"),
+        r2 = os.path.join(READS_DIR, "{sample}_R2_001.fastq.gz")
+    output:
+        "data/fastqc_raw/{sample}_R1_001_fastqc.html",
+        "data/fastqc_raw/{sample}_R2_001_fastqc.html",
+        "data/fastqc_raw/{sample}_R1_001_fastqc.zip",
+        "data/fastqc_raw/{sample}_R2_001_fastqc.zip"
+    threads: 4
+    shell:
+        """
+        module load fastqc
+        mkdir -p data/fastqc_raw
+        fastqc {input.r1} {input.r2} --outdir data/fastqc_raw --threads {threads}
+        """
+
+
+rule multiqc_raw:
+    input:
+        expand("data/fastqc_raw/{sample}_R1_001_fastqc.zip", sample=SAMPLES),
+        expand("data/fastqc_raw/{sample}_R2_001_fastqc.zip", sample=SAMPLES)
+    output:
+        "data/multiqc_raw/multiqc_report.html"
+    shell:
+        """
+        module load multiqc
+        mkdir -p data/multiqc_raw
+        multiqc data/fastqc_raw --outdir data/multiqc_raw 
+        """
+
+rule trimmomatic:
+    input:
+        r1 = "data/raw_reads/{sample}_R1_001.fastq.gz",
+        r2 = "data/raw_reads/{sample}_R2_001.fastq.gz"
+    output:
+        r1_paired   = "data/trimmed/{sample}_R1_paired.fastq.gz",
+        r1_unpaired = "data/trimmed/{sample}_R1_unpaired.fastq.gz",
+        r2_paired   = "data/trimmed/{sample}_R2_paired.fastq.gz",
+        r2_unpaired = "data/trimmed/{sample}_R2_unpaired.fastq.gz"
+    params:
+        adapters = "/projects/p31618/databases/adapters.fa"
+    threads: 8
+    conda:
+        "envs/trimmomatic.yml"
+    shell:
+        """
+        mkdir -p data/trimmed
+        trimmomatic PE \
+          -threads {threads} \
+          -Xmx28G \
+          {input.r1} {input.r2} \
+          {output.r1_paired} {output.r1_unpaired} \
+          {output.r2_paired} {output.r2_unpaired} \
+          HEADCROP:15 \
+          ILLUMINACLIP:{params.adapters}:2:30:10 \
+          LEADING:20 TRAILING:20 \
+          SLIDINGWINDOW:4:20 MINLEN:50
+        """
+
+rule fastqc_trimmed:
+    input:
+        r1 = "data/trimmed/{sample}_R1_paired.fastq.gz",
+        r2 = "data/trimmed/{sample}_R2_paired.fastq.gz"
+    output:
+        "data/fastqc_trimmed/{sample}_R1_paired_fastqc.html",
+        "data/fastqc_trimmed/{sample}_R2_paired_fastqc.html",
+        "data/fastqc_trimmed/{sample}_R1_paired_fastqc.zip",
+        "data/fastqc_trimmed/{sample}_R2_paired_fastqc.zip"
+    threads: 4
+    shell:
+        """
+        module load fastqc
+        mkdir -p data/fastqc_trimmed
+        fastqc {input.r1} {input.r2} --outdir data/fastqc_trimmed --threads {threads}
+        """
+
+rule multiqc_trimmed:
+    input:
+        expand("data/fastqc_trimmed/{sample}_R1_paired_fastqc.zip", sample=SAMPLES),
+        expand("data/fastqc_trimmed/{sample}_R2_paired_fastqc.zip", sample=SAMPLES)
+    output:
+        "data/multiqc_trimmed/multiqc_report.html"
+    shell:
+        """
+        module load multiqc
+        mkdir -p data/multiqc_trimmed
+        multiqc data/fastqc_trimmed --outdir data/multiqc_trimmed 
+        """
+
+rule spades_wgs:
+    input:
+        r1 = "data/trimmed/{sample}_R1_paired.fastq.gz",
+        r2 = "data/trimmed/{sample}_R2_paired.fastq.gz"
+    output:
+        contigs = "data/spades/{sample}/contigs.fasta",
+        scaffolds = "data/spades/{sample}/scaffolds.fasta"
+    threads: 16
+    resources:
+        slurm_account = "b1042",
+        slurm_partition = "genomics-himem",
+        runtime = 7200,      
+        nodes = 1,
+        mem_mb = 150000,       
+        slurm_extra = "--mail-user=esmee@u.northwestern.edu --mail-type=END"
+    conda:
+        "envs/spades.yml"
+    shell:
+        """
+        mkdir -p data/spades/{wildcards.sample}
+        spades.py \
+          -t {threads} \
+          -m 140 \
+          -k 21,33,55,77,99 \
+          --only-assembler \
+          -1 {input.r1} \
+          -2 {input.r2} \
+          -o data/spades/{wildcards.sample}
+        """
+
+rule list_scaffolds:
+    input: 
+        expand("data/spades/{sample}/scaffolds.fasta", sample=SAMPLES)
+    output:
+        "data/gtdbtk_input/genome_list.tsv"
+    run:
+        os.makedirs(os.path.dirname(output[0]), exist_ok=True)
+        with open(output[0], "w") as f:
+            for sample in SAMPLES:
+                genome_path = f"data/spades/{sample}/scaffolds.fasta"
+                f.write(f"{genome_path}\t{sample}\n")
+
+rule gtdbtk_classify:
+    input:
+        "data/gtdbtk_input/genome_list.tsv"
+    output:
+        directory("data/gtdbtk_all")
+    threads: 32
+    resources:
+        slurm_account="b1042",
+        slurm_partition="genomics-himem",
+        runtime=48*60,
+        nodes=1,
+        mem_mb=256000,
+        slurm_extra="--mail-user=esmee@u.northwestern.edu --mail-type=END,FAIL"
+    shell:
+        """
+        module purge all
+        module load python-miniconda3
+        source activate /projects/p32449/goop_stirrers/miniconda3/envs/gtdbtk-2.5.2
+
+        gtdbtk classify_wf \
+            --batchfile {input} \
+            --out_dir {output} \
+            --extension scaffolds.fasta \
+            --cpus {threads}
+        """
+
+
+
