@@ -10,6 +10,12 @@ SAMPLES, = glob_wildcards(os.path.join(READS_DIR, "{sample}_R1_001.fastq.gz"))
 if not SAMPLES:
     raise ValueError(f"No FASTQ files found in {READS_DIR}")
 
+# Path to METABOLIC executable
+MB_EXECUTABLE = "/projects/p32449/goop_stirrers/METABOLIC_2025-09-02/METABOLIC/METABOLIC-G.pl"
+
+# Path to GTDB database
+GTDB = "/projects/p32449/goop_stirrers/gtdbtk_data/release226"
+
 # -------------------------------------------------------------------- # 
 
 rule all:
@@ -194,6 +200,8 @@ rule metabolic_g:
         expand("data/spades/{sample}/scaffolds.fasta", sample=SAMPLES)
     output: 
         directory("data/metabolic_g")
+    conda: 
+        "envs/metabolic_adjusted.yml"
     threads: 8
     resources:
         slurm_account="p32449",
@@ -204,18 +212,15 @@ rule metabolic_g:
         slurm_extra="--mail-user=esmee@u.northwestern.edu --mail-type=END,FAIL"
     shell: 
         """
-        module purge all
-        module load perl
-        module load python-miniconda3
-        source activate /projects/p32449/goop_stirrers/miniconda3/envs/METABOLIC_v4.0
-
         mkdir -p {output}/scaffolds
         for genome in {input}; do
-            folder=$(basename $(dirname $genome))
+            folder=$(basename $(dirname "$genome"))
             cp "$genome" "{output}/scaffolds/${{folder}}_scaffolds.fasta"
         done
-        
-        perl /projects/p32449/goop_stirrers/METABOLIC_2025-09-02/METABOLIC/METABOLIC-G.pl \
+
+        export GTDB_DATA_PATH={GTDB}
+
+        perl {MB_EXECUTABLE} \
             -in-gn {output}/scaffolds \
             -o {output} \
             -t {threads}
