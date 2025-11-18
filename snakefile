@@ -187,5 +187,39 @@ rule gtdbtk_classify:
             --cpus {threads}
         """
 
+rule metabolic_g: 
+    input: 
+        "data/spades"
+    output: 
+        directory("data/metabolic_g")
+    threads: 8
+    resources:
+        slurm_account="b1042",
+        slurm_partition="genomics-short",
+        runtime=4*60,
+        nodes=1,
+        mem_mb=60000,
+        slurm_extra="--mail-user=esmee@u.northwestern.edu --mail-type=END,FAIL"
+    shell: 
+        """
+        module purge all
+        module load perl
+        module load python-miniconda3
+        source activate /projects/p32449/goop_stirrers/miniconda3/envs/METABOLIC_v4.0
 
+        mkdir -p {output}
+
+        # make a folder with scaffolds 
+        mkdir -p {output}/scaffolds
+        for dir in {input.spades_dir}/*; do
+            folder=$(basename $dir)
+            cp "$dir"/scaffolds.fasta "{output}/scaffolds/${folder}_scaffolds.fasta"
+        done
+        
+        # run metabolic
+        perl /projects/p32449/goop_stirrers/METABOLIC_2025-09-02/METABOLIC/METABOLIC-G.pl \
+        -in-gn {output}/scaffolds \
+        -o {output} \
+        -t {threads}
+        """
 
