@@ -1,3 +1,4 @@
 data # ignore data
 slurm_logs # ignore tmp output logs from snakemake
-.snakemake # ignore snakemake cache
+.snakemake/ # ignore snakemake cache
+*.out # ignore output logs
