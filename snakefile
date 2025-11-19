@@ -23,7 +23,11 @@ rule all:
         # GTDB-Tk outputs
         "data/gtdbtk_all",
         # METABOLIC-G outputs
-        "data/metabolic_g"
+        "data/metabolic_g",
+        # prokka outputs
+        expand("data/prokka/{sample}", sample=SAMPLES)
+        # EcoFoldDB outputs
+        expand("data/EcoFoldDB/{sample}/{sample}.ecofolddb_annotations.txt", sample=SAMPLES)
 
 
 rule fastqc_raw:
@@ -220,5 +224,63 @@ rule metabolic_g:
             -in-gn {output}/scaffolds \
             -o {output} \
             -t {threads}
+        """
+
+rule prokka:
+    input:
+        "data/spades/{sample}/scaffolds.fasta"
+    output:
+        directory("data/prokka/{sample}")
+    resources:
+        slurm_account="p32449",
+        slurm_partition="short",
+        runtime=4*60,
+        nodes=1,
+        mem_mb=60000,
+        slurm_extra="--mail-user=esmee@u.northwestern.edu --mail-type=END,FAIL"
+    shell:
+        """
+        module load python-miniconda3
+        source $(conda info --base)/etc/profile.d/conda.sh
+        source activate /projects/p31618/software/prokka
+        
+        prokka \
+            --cpus 2 \
+            --outdir {output} \
+            --prefix {wildcards.sample} \
+            {input}
+        """
+
+rule EcoFoldDB:
+    input:
+        "data/prokka/{sample}/{sample}.faa"
+    output:
+        "data/EcoFoldDB/annotated/{sample}/{sample}.ecofolddb_annotations.txt"
+    resources:
+        slurm_account="p32449",
+        slurm_partition="gengpu",
+        gpu="gpu:a100:1",
+        runtime=60,
+        nodes=1,
+        mem_mb=10000,
+        slurm_extra="--mail-user=esmee@u.northwestern.edu --mail-type=END,FAIL"
+    shell:
+        """
+        module load cuda   # If your cluster requires a CUDA module
+        echo "Using GPU: $CUDA_VISIBLE_DEVICES"
+
+        # Add Foldseek/EcoFoldDB to PATH
+        export PATH=/projects/p31618/software/EcoFoldDB/foldseek/bin/:$PATH
+
+        # Move to EcoFoldDB directory
+        cd /projects/p31618/software/EcoFoldDB
+
+        # Run annotation
+        ./EcoFoldDB-annotate.sh \
+        --EcoFoldDB_dir /projects/p31618/software/EcoFoldDB/EcoFoldDB_v2.0 \
+        --gpu 1 \
+        --ProstT5_dir /projects/p31618/software/EcoFoldDB/ProstT5_dir \
+        -o {output} \
+        {input}
         """
 
