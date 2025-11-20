@@ -6,12 +6,24 @@ annotation_fp <- "./data/metabolic_g/METABOLIC_result_each_spreadsheet/METABOLIC
 color_fp <- "/projects/p32449/color_palettes/color_dictionary_draft07.csv"
 classification_fp <- "./data/gtdbtk_all/gtdbtk.bac120.summary.tsv"
 sample_key_fp <- "./data/sharepoint_data/submission_key.csv"
+ecofold_fp <- "./data/EcoFoldDB/annotated"
 
 # read in data
 annotation_raw <- read_tsv(annotation_fp)
 color_raw <- read_csv(color_fp)
 classification_raw <- read_tsv(classification_fp)
-sample_key <- read_csv(sample_key_fp)
+
+# read in and merge EcoFoldDB outputs
+eco_files <- list.files(ecofold_fp, pattern = "\\.ecofolddb_annotations.txt$", 
+  full.names = TRUE, recursive = TRUE)
+
+eco_df <- eco_files %>%
+  map_df(~ {
+    fname <- basename(.x)
+    sample <- sub("\\..*", "", fname)  
+    read_tsv(.x) %>% mutate(sample = sample, filename = fname)
+  }) %>% 
+  mutate(hit = 1) # dummy hit number for presence absence table
 
 # tidy data for ggplot visualization
 annotation_tidy <- annotation_raw %>% 
@@ -55,6 +67,10 @@ annotation_plot <- annotation_classified %>%
     "Sulfur cycling", 
     Category
   ))
+
+# add eco to metabolic outs
+annotation_eco <- annotation_plot %>% 
+  left_join(eco_df, by = c("")
 
 # visualize!
 annotation_plot %>% 
