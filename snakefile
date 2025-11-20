@@ -23,15 +23,11 @@ rule all:
         # GTDB-Tk outputs
         "data/gtdbtk_all",
         # METABOLIC-G outputs
-        "data/metabolic_g",
+        "data/metabolic_g/METABOLIC_result.xlsx",
         # prokka outputs
-        expand("data/prokka/{sample}", sample=SAMPLES),
-        # prodigal ouputs
-        expand("data/prodigal/{sample}/{sample}.faa", sample=SAMPLES),
-        expand("data/prodigal/{sample}/{sample}.genes", sample=SAMPLES),
-        expand("data/prodigal/{sample}/{sample}.fna", sample=SAMPLES),
+        expand("data/prokka/{sample}/{sample}.faa", sample=SAMPLES),
         # EcoFoldDB outputs
-        expand("data/EcoFoldDB/annotated/{sample}/{sample}.ecofolddb_annotations.txt", sample=SAMPLES)
+        # expand("data/EcoFoldDB/annotated/{sample}/{sample}.ecofolddb_annotations.txt", sample=SAMPLES)
 
 
 
@@ -197,7 +193,7 @@ rule metabolic_g:
     input: 
         expand("data/spades/{sample}/scaffolds.fasta", sample=SAMPLES)
     output: 
-        directory("data/metabolic_g")
+        directory("data/metabolic_g/METABOLIC_result.xlsx")
     #conda: 
     #    "envs/metabolic_adjusted.yml"
     threads: 8
@@ -284,33 +280,32 @@ rule prodigal:
              -p meta
         """
 
-rule EcoFoldDB:
-    input:
-        "data/prodigal/{sample}/{sample}.faa"
-    output:
-        "data/EcoFoldDB/annotated/{sample}/{sample}.ecofolddb_annotations.txt"
-    resources:
-        slurm_account="p32449",
-        slurm_partition="gengpu",
-        gpu="gpu:a100:1",
-        runtime=60,
-        nodes=1,
-        mem_mb=10000,
-        slurm_extra="--mail-user=esmee@u.northwestern.edu --mail-type=END,FAIL"
-    shell:
-        """
-        module load cuda   # If your cluster requires a CUDA module
-        echo "Using GPU: $CUDA_VISIBLE_DEVICES"
+# rule EcoFoldDB:
+#     input:
+#         "data/prodigal/{sample}/{sample}.faa"
+#     output:
+#         "data/EcoFoldDB/annotated/{sample}/{sample}.ecofolddb_annotations.txt"
+#     resources:
+#         slurm_account="p32449",
+#         slurm_partition="gengpu",
+#         gres="gpu:a100:1",
+#         runtime=60,
+#         nodes=1,
+#         mem_mb=10000,
+#         slurm_extra="--mail-user=esmee@u.northwestern.edu --mail-type=END,FAIL"
+#     shell:
+#         """
+#         module load cuda   
 
-        # Add Foldseek/EcoFoldDB to PATH
-        export PATH=/projects/p31618/software/EcoFoldDB/foldseek/bin/:$PATH
+#         # Add Foldseek/EcoFoldDB to PATH
+#         export PATH=/projects/p31618/software/EcoFoldDB/foldseek/bin/:$PATH
 
-        # Run annotation
-        /projects/p31618/software/EcoFoldDB/EcoFoldDB-annotate.sh \
-        --EcoFoldDB_dir /projects/p31618/software/EcoFoldDB/EcoFoldDB_v2.0 \
-        --gpu 1 \
-        --ProstT5_dir /projects/p31618/software/EcoFoldDB/ProstT5_dir \
-        -o data/EcoFoldDB/{sample} \
-        {input}
-        """
+#         # Run annotation
+#         /projects/p31618/software/EcoFoldDB/EcoFoldDB-annotate.sh \
+#         --EcoFoldDB_dir /projects/p31618/software/EcoFoldDB/EcoFoldDB_v2.0 \
+#         --gpu 1 \
+#         --ProstT5_dir /projects/p31618/software/EcoFoldDB/ProstT5_dir \
+#         -o data/EcoFoldDB/{wildcards.sample} \
+#         {input}
+#         """
 
