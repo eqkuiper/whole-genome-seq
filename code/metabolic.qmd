@@ -1,0 +1,239 @@
+---
+title: "METABOLIC analysis"
+format: html
+---
+
+```{r}
+#| label: set up 
+#| include: false
+
+root_dir <- "/projects/p32449/maca_mags_metabolic"
+tsv_fp <- "./data/2025-09-16_metabolic_out_tsv1"
+run_date <- "2025-09-16"
+color_fp <- "/projects/p32449/color_palettes/color_dictionary_draft07.csv"
+classification_fp <- "./data/MJS_MAG_key.csv"
+isotopes_fp <- "~/diy-tree-building/mammoth_meta_may25.csv"
+metadata_fp <- "data/MasterSampleList(sediment&water).csv"
+
+knitr::opts_chunk$set(root.dir = root_dir)
+library("dplyr")
+library("ggplot2")
+library("paletteer")
+library("ggh4x")
+library("readr")
+library("tidyr")
+library("purrr")
+library("plotly")
+library("stringr")
+library("vegan")
+
+setwd(root_dir)
+```
+
+```{r}
+#| label: read and tidy metabolic hits
+#| include: false
+
+# List TSV files
+tsv_list <- list.files(tsv_fp, full.names = TRUE)
+
+# Function to safely read a TSV - retain filepath
+read_safe_tsv <- function(f) {
+  read_tsv(f, show_col_types = FALSE) |> 
+    mutate(source_file = basename(f))
+}
+
+# Read TSV files
+tsv_dfs <- lapply(tsv_list, read_safe_tsv)
+
+# Create df of just metadata 
+metadata_df <- tsv_dfs[[1]] %>% 
+  select(Category:`Hmm detecting threshold`) %>% 
+  mutate(hmm_files = `Hmm file`)
+
+# Remove metadata from TSVs
+tsvs_naked <- map(tsv_dfs, function(df) {
+  start <- match("Category", names(df))
+  end   <- match("Hmm detecting threshold", names(df))
+  df[ , -(start:end)]
+})
+
+# Bind all TSVs
+tsvs_naked_bound <- bind_cols(tsvs_naked, .id = "source_file")
+
+# Add metadata back in 
+tsvs_metadata <- bind_cols(metadata_df, tsvs_naked_bound)
+
+# Pivot longer and tidy up
+tsvs_tidy <- tsvs_metadata |> 
+  select(-starts_with("source_file"), -.id) |> 
+  mutate(across(-c(Category:hmm_files), as.character)) |> 
+  pivot_longer(
+    cols = -c(Category:hmm_files),
+    names_to = "bin_measure",
+    values_to = "value") |> 
+  separate(bin_measure, into = c("sample_bin", "measurement"), 
+    sep = " ",
+    extra = "merge") |> 
+  pivot_wider(names_from = "measurement",
+    values_from = "value") |> 
+  # add column for joining with colors later
+  mutate(Gene.name = `Gene name`, .keep = "unused") %>% 
+  mutate(hmm_files_singles = as.character(hmm_files)) %>% 
+  separate_rows(hmm_files_singles, sep = "[\\s,]+")
+```
+
+```{r}
+#| label: add taxonomy
+#| include: false
+
+tax_raw <- read_csv(classification_fp) # read in tax csv
+
+tax_tidy <- tax_raw %>% # clean up csv so we only have what we need
+  select(Genome_ID, MAG_name, full_GTDBtk_classification) %>% 
+  mutate(sample_bin = MAG_name, .keep = "unused")
+
+tsvs_tidyer <- tsvs_tidy %>% 
+  left_join(tax_tidy, by = "sample_bin") %>% 
+  separate(full_GTDBtk_classification, into = 
+    c("domain", "phylum", "class", "order", "family", "genus", "species"),
+    sep = ";", fill = "right", remove = FALSE) %>%
+  mutate(across(domain:species, ~ sub(".*__", "", .))) %>% 
+  mutate(KO = `Corresponding KO`, .keep = "unused")
+```
+
+```{r}
+#| label: add color palette
+#| include: false
+
+# read in color df
+color_dictionary <- read_csv(color_fp)
+
+# make color mapping parameter
+color_map <- setNames(color_dictionary$color_func, color_dictionary$module)
+
+# make colors long
+color_dictionary_long <- color_dictionary %>% 
+  mutate(hmm_files_singles = as.character(hmm_files), 
+    .keep = "unused") %>% 
+  separate_rows(hmm_files_singles, sep = "[\\s,]+")
+
+# join colors and tsv
+tsvs_tidyest <- tsvs_tidyer %>% 
+  left_join(color_dictionary_long, by = "hmm_files_singles") %>% 
+  mutate(sample = str_remove(sample_bin, "_bin.*$"))
+```
+
+```{r}
+#| label: visualize output :) 
+#| echo: false
+tsvs_tidyest %>% 
+  filter(!is.na(module)) %>% 
+  filter(`Hit numbers` > 0, !is.na(Genome_ID)) %>% 
+  ggplot(aes(x = Genome_ID, y = `Gene abbreviation`, color = module)) + 
+    geom_point(size = 2) + 
+    scale_color_manual(values = color_map) + 
+    theme_bw() + 
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+          strip.text.y = element_text(angle = 0),
+          strip.text.x = element_text(angle = 90), 
+          strip.placement = "outside",
+          legend.position = "bottom",
+          text = element_text(size = 20)) + 
+    guides(size = "none") + 
+    labs(x = "", 
+         y = "gene",
+         color = "function") + 
+    facet_nested(rows = vars(Category), 
+                 cols = vars(phylum),
+                 scales = "free", space = "free")
+
+#ggsave("results/figures/2025-09-23_all-metabolism_v9.pdf",
+  #width = 60,
+  #height = 40,
+  #limitsize = FALSE)
+```
+
+```{r}
+#| label: visualize output in a more granular way
+
+genes_of_interest <- c("pmoA", "pmoB", "pmoC", "mmoB", "mmoD")
+
+genomes_with_interest <- tsvs_tidyest %>% 
+  filter(`Gene abbreviation` %in% genes_of_interest,
+         !is.na(module),
+         `Hit numbers` > 0,
+         !is.na(Genome_ID)) %>% 
+  pull(Genome_ID) %>% 
+  unique()
+
+tsvs_tidyest %>%
+  mutate(Category_broad = ifelse(grepl("^Sulfur cycling", Category),
+   "Sulfur cycling",
+    Category)) %>% 
+  filter(Genome_ID %in% genomes_with_interest,
+         !is.na(module),
+         `Hit numbers` > 0,
+         !is.na(Genome_ID)) %>%
+  ggplot(aes(x = Genome_ID, y = `Gene abbreviation`, color = module)) +
+    geom_point(size = 4) +
+    scale_color_manual(values = color_map) +
+    theme_dark() +
+    theme(
+      axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+      strip.text.y = element_text(angle = 0),
+      strip.text.x = element_text(angle = 90), 
+      strip.placement = "outside",
+      legend.position = "bottom",
+      text = element_text(size = 20)) +
+    guides(size = "none") +
+    labs(x = "", 
+         y = "gene",
+         color = "function") +
+    facet_nested(
+      rows = vars(Category_broad), 
+      cols = vars(phylum),
+      scales = "free", space = "free")
+
+#ggsave("results/figures/2025-09-24_methane_genome.png",
+  #width = 60,
+  #height = 40, 
+  #limitsize = FALSE)
+
+tsvs_tidyest %>%
+  mutate(Category_broad = ifelse(grepl("^Sulfur cycling", Category),
+   "Sulfur cycling",
+    Category)) %>% 
+  filter(Genome_ID %in% genomes_with_interest,
+         !is.na(module),
+         `Hit numbers` > 0,
+         !is.na(Genome_ID)) %>%
+  filter(Category_broad %in% c("C1 metabolism", "Methane metabolism", "Nitrogen cycling", "Sulfur cycling")) %>% 
+  arrange(module, `Gene abbreviation`) %>% 
+  ggplot(aes(x = Genome_ID, y = forcats::fct_inorder(`Gene abbreviation`), color = module)) +
+    geom_point(size = 12) +
+    scale_color_manual(values = color_map) +
+    #theme_dark() +
+    theme(
+      axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+      strip.text.y = element_text(angle = 0),
+      strip.text.x = element_text(angle = 90), 
+      strip.placement = "outside",
+      legend.position = "bottom",
+      text = element_text(size = 50)) +
+    guides(size = "none",
+      color = guide_legend(nrow = 7)) +
+    labs(x = "", 
+         y = "gene",
+         color = "function") +
+    facet_nested(
+      rows = vars(Category_broad), 
+      cols = vars(phylum),
+      scales = "free", space = "free")
+
+ggsave("results/figures/2025-09-24_methane_genome_lite_2.png", 
+  width = 60,
+  height = 40, 
+  limitsize = FALSE)
+```
+
