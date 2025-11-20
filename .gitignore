@@ -2,3 +2,4 @@ data/
 slurm_logs/
 .snakemake/
 *.out
+results/
