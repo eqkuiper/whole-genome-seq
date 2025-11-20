@@ -2,7 +2,7 @@
 #SBATCH -A b1042
 #SBATCH -p genomics-gpu
 #SBATCH --gres=gpu:a100:1
-#SBATCH -t 48:00:00
+#SBATCH -t 10:00:00
 #SBATCH -N 1
 #SBATCH -n 4
 #SBATCH --array=0-5 # adjust to number of genomes
@@ -14,7 +14,7 @@
 
 # USER INPUTS
 # tsv with genome fp and genome id as cols
-faa_dir=/projects/p32449/isolate_genomes/data/prokka
+faa_dir=/projects/p32449/isolate_genomes/data/prodigal
 out_dir=/projects/p32449/isolate_genomes/data/EcoFoldDB
 #############
 
@@ -50,7 +50,7 @@ genome_dir="${out_dir}/annotated/${genome_name}"
     -o "${genome_dir}" \
     "$genome"
 
-rm ${out_dir}/tmp
+rm -rf ${out_dir}/tmp
 
 
 
