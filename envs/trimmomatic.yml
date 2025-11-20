@@ -1,8 +1,0 @@
-name: trimmomatic_env
-channels:
-  - bioconda
-  - conda-forge
-  - defaults
-dependencies:
-  - trimmomatic
-  - openjdk
