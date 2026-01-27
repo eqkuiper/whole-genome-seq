@@ -27,7 +27,10 @@ rule all:
         # prokka outputs
         expand("data/prokka/{sample}/{sample}.faa", sample=SAMPLES),
         # EcoFoldDB outputs
-        # expand("data/EcoFoldDB/annotated/{sample}/{sample}.ecofolddb_annotations.txt", sample=SAMPLES)
+        # expand("data/EcoFoldDB_snakemake/annotated/{sample}/{sample}.ecofolddb_annotations.txt", sample=SAMPLES)
+        # GToTree outputs
+        "data/GToTree/isolate_genome.tre"
+
 
 
 
@@ -284,14 +287,14 @@ rule prodigal:
 #     input:
 #         "data/prodigal/{sample}/{sample}.faa"
 #     output:
-#         "data/EcoFoldDB/annotated/{sample}/{sample}.ecofolddb_annotations.txt"
+#         "data/EcoFoldDB_snakemake/annotated/{sample}/{sample}.ecofolddb_annotations.txt"
 #     resources:
 #         slurm_account="p32449",
 #         slurm_partition="gengpu",
-#         gres="gpu:a100:1",
 #         runtime=60,
 #         nodes=1,
 #         mem_mb=10000,
+#         gres="gpu:a100:1",
 #         slurm_extra="--mail-user=esmee@u.northwestern.edu --mail-type=END,FAIL"
 #     shell:
 #         """
@@ -309,3 +312,43 @@ rule prodigal:
 #         {input}
 #         """
 
+rule build_tree:
+    input:
+        ref_genomes="/projects/p32449/maca_mags_metabolic/data/2025-09-16_metagenomes/genome_list_genbank.txt",
+        isolate_genomes=expand("data/spades/{sample}/scaffolds.fasta", sample=SAMPLES)
+    output:
+        "data/GToTree/isolate_genome.tre"
+    resources:
+        slurm_account="p32449",
+        slurm_partition="normal",
+        runtime=4*60, 
+        nodes=1,
+        mem_mb=16000,
+        slurm_extra="--mail-user=esmee@u.northwestern.edu --mail-type=END,FAIL"
+    shell:
+        """
+        mkdir -p data/GToTree
+
+        combined_list="data/GToTree/combined_genome_list.txt"
+        : > "$combined_list"
+
+        # Convert reference list entries to absolute paths
+        while read -r line; do
+            [ -z "$line" ] && continue
+            realpath "$line" >> "$combined_list"
+        done < {input.ref_genomes}
+
+        # Convert isolate genomes to absolute paths
+        for g in {input.isolate_genomes}; do
+            realpath "$g" >> "$combined_list"
+        done
+
+        module load python-miniconda3
+        eval "$(conda shell.bash hook)"
+        conda activate /projects/p32449/goop_stirrers/miniconda3/envs/gtotree
+
+        GToTree \
+            -f "$combined_list" \
+            -H Bacteria_and_Archaea \
+            -o data/GToTree
+        """
