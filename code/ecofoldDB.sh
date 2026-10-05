@@ -15,7 +15,7 @@
 # USER INPUTS
 # tsv with genome fp and genome id as cols
 faa_dir=/projects/p32449/isolate_genomes/data/prodigal
-out_dir=/projects/p32449/isolate_genomes/data/EcoFoldDB
+out_dir=/projects/p32449/isolate_genomes/data/EcoFoldDB_test
 #############
 
 module load cuda   # If your cluster requires a CUDA module
